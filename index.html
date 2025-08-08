@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cheeseburger Explosion Generator</title>
+    <style>
+        /* Basic styles to make the canvas fill the screen */
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #2c3e50; /* A nice, deep blue */
+            font-family: 'Inter', sans-serif;
+        }
+        canvas {
+            display: block;
+            cursor: pointer;
+        }
+        /* Style for the instruction text */
+        #instructions {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 16px;
+            text-align: center;
+            pointer-events: none; /* Allows clicks to pass through to the canvas */
+            animation: fadeInOut 5s ease-in-out forwards;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <canvas id="fireworksCanvas"></canvas>
+    <div id="instructions">Click or Tap to launch a cheeseburger</div>
+
+    <script>
+        // Get the canvas and its 2D rendering context
+        const canvas = document.getElementById('fireworksCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Configuration ---
+        const GRAVITY = 0.04;
+        const LAUNCH_CHANCE = 0.02; // Chance to auto-launch a burger each frame
+        const INGREDIENTS = ['🍔', '🥬', '🍅', '🧀', '🍞', '🥩'];
+
+        // Array to hold all active particles and cheeseburgers
+        let particles = [];
+        let cheeseburgers = [];
+
+        // --- Utility Functions ---
+
+        // Set canvas dimensions to fill the window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        // Generate a random number within a range
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        // --- Classes ---
+
+        // Represents a single ingredient particle in an explosion
+        class Particle {
+            constructor(x, y, char, velocity) {
+                this.x = x;
+                this.y = y;
+                this.char = char; // The emoji character
+                // Use provided velocity or generate a random one for explosions
+                this.velocity = velocity || {
+                    x: random(-2.5, 2.5),
+                    y: random(-5, -1)
+                };
+                this.fontSize = random(15, 30);
+                this.alpha = 1; // Fully opaque initially
+                this.life = random(80, 120); // Frames to live
+                this.rotation = random(0, Math.PI * 2);
+                this.rotationSpeed = random(-0.1, 0.1);
+            }
+
+            // Update particle state for each frame
+            update() {
+                // Apply gravity
+                this.velocity.y += GRAVITY;
+                // Move particle
+                this.x += this.velocity.x;
+                this.y += this.velocity.y;
+                // Apply rotation
+                this.rotation += this.rotationSpeed;
+                // Decrease life and fade out
+                this.life -= 1;
+                this.alpha = Math.max(0, this.life / 120);
+            }
+
+            // Draw the particle on the canvas
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.font = `${this.fontSize}px sans-serif`;
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                ctx.fillText(this.char, -this.fontSize / 2, this.fontSize / 2);
+                ctx.restore();
+            }
+        }
+
+        // Represents a cheeseburger rocket before it explodes
+        class Cheeseburger {
+            constructor(startX, startY, targetX, targetY) {
+                this.x = startX;
+                this.y = startY;
+                this.targetX = targetX;
+                this.targetY = targetY;
+                this.trail = [];
+                // Calculate trajectory
+                const angle = Math.atan2(targetY - startY, targetX - startX);
+                const speed = random(9, 13);
+                this.velocity = {
+                    x: Math.cos(angle) * speed,
+                    y: Math.sin(angle) * speed
+                };
+            }
+
+            // Update cheeseburger state for each frame
+            update() {
+                // Move the cheeseburger towards its target
+                this.x += this.velocity.x;
+                this.y += this.velocity.y;
+                
+                // Add a particle to the trail (e.g., a bread crumb)
+                this.trail.push(new Particle(this.x, this.y, '🍞', {x:0, y:0.5}));
+                // Limit trail length
+                if (this.trail.length > 5) {
+                    this.trail.shift();
+                }
+
+                // Check if the cheeseburger has reached its target
+                const distanceToTarget = Math.hypot(this.targetX - this.x, this.targetY - this.y);
+                if (distanceToTarget < 50) {
+                    this.explode();
+                    return true; // Mark for removal
+                }
+                return false;
+            }
+
+            // Draw the cheeseburger and its trail
+            draw() {
+                ctx.font = '40px sans-serif';
+                ctx.fillText('🍔', this.x - 20, this.y + 20);
+                
+                // Draw the trail
+                this.trail.forEach(p => p.draw());
+            }
+
+            // Create an explosion of ingredient particles
+            explode() {
+                const particleCount = Math.floor(random(40, 80));
+                for (let i = 0; i < particleCount; i++) {
+                    const angle = random(0, Math.PI * 2);
+                    const speed = random(1, 6);
+                    const velocity = {
+                        x: Math.cos(angle) * speed,
+                        y: Math.sin(angle) * speed
+                    };
+                    const char = INGREDIENTS[Math.floor(random(0, INGREDIENTS.length))];
+                    particles.push(new Particle(this.x, this.y, char, velocity));
+                }
+            }
+        }
+
+
+        // --- Main Animation Loop ---
+
+        function animate() {
+            // Request the next frame
+            requestAnimationFrame(animate);
+
+            // Clear the canvas with a semi-transparent fill to create a motion blur effect
+            ctx.fillStyle = 'rgba(44, 62, 80, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Randomly launch a new cheeseburger from the bottom
+            if (Math.random() < LAUNCH_CHANCE) {
+                cheeseburgers.push(new Cheeseburger(
+                    random(canvas.width * 0.2, canvas.width * 0.8), // startX
+                    canvas.height,                                  // startY
+                    random(0, canvas.width),                        // targetX
+                    random(canvas.height * 0.2, canvas.height * 0.6)// targetY
+                ));
+            }
+
+            // Update and draw all cheeseburgers
+            // Loop backwards to safely remove items from the array
+            for (let i = cheeseburgers.length - 1; i >= 0; i--) {
+                cheeseburgers[i].draw();
+                if (cheeseburgers[i].update()) {
+                    cheeseburgers.splice(i, 1); // Remove if exploded
+                }
+            }
+
+            // Update and draw all particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].draw();
+                particles[i].update();
+                if (particles[i].alpha <= 0) {
+                    particles.splice(i, 1); // Remove if faded out
+                }
+            }
+        }
+
+        // --- Event Listeners ---
+
+        // Resize canvas when window is resized
+        window.addEventListener('resize', resizeCanvas);
+
+        // Launch a cheeseburger on click or tap
+        function launchFromEvent(e) {
+            const touch = e.touches ? e.touches[0] : e;
+            const targetX = touch.clientX;
+            const targetY = touch.clientY;
+            cheeseburgers.push(new Cheeseburger(
+                canvas.width / 2, // Start from bottom center
+                canvas.height,
+                targetX,
+                targetY
+            ));
+        }
+        canvas.addEventListener('click', launchFromEvent);
+        canvas.addEventListener('touchstart', launchFromEvent);
+
+
+        // --- Initialization ---
+        resizeCanvas();
+        animate();
+    </script>
+</body>
+</html>
